@@ -20,9 +20,7 @@ A patch for **Pokémon: Let's Go, Pikachu!** and **Pokémon: Let's Go, Eevee!** 
 
 ## See it in action
 
-| Enable Wild Battle: **On** 
-|---|---|
-| ![With the option On, a wild Rattata starts a battle with Pikachu](docs/images/option-on.gif)  |
+ ![With the option On, a wild Rattata starts a battle with Pikachu](docs/images/option-on.gif)  
 
 ## Features
 
