@@ -11,7 +11,7 @@ One IPS32 file, named after the build ID, in `atmosphere/exefs_patches/<folder>/
 | Range | Use | Why it's safe |
 |---|---|---|
 | `0x6F6830-0x6F7B10` | Main code, then the Exp. Share row's text | Protobuf `Tokenizer::ConsumeString`, `ConsumeNumber`, the comment functions after them and `Tokenizer::Next` itself. Only the text-format parser calls them, and nothing in that parser's whole call tree is referenced from data or has its address taken, so normal play can't reach it. If it ever ran, the game would crash |
-| `0xD32BB0-0xD33000` | Option text lookup and label names | Zero padding after the text section |
+| `0xD32BB0-0xD33000` | Original build: option text lookup and label names. Ryujinx experiment: data only | Inter-segment gap: `.text` ends at `0xD32BA8`, `.ro` begins at `0xD33000`; experimental code is moved into the executable cave |
 | `0x1526180-0x1527000` | Option text in every language | Zero padding after the read-only section |
 | `0x1EE0F00` onward | Runtime state | Padding past the end of `.bss`, in the same mapped page |
 
@@ -122,3 +122,7 @@ Panes are found by hash in the layout's table at `+0x220` (count at `+0x228`), w
 ## Let's Go, Eevee!
 
 Eevee 1.0.2 (build `5831EC64D6B696FD69E69505821B97B1`) has the same code as Pikachu, moved by small amounts that change from place to place (-0x30, -0x10, 0, +0x30 or +0x60). Its data, `.bss` and padding layout are the same, and the game files the patch depends on are identical. `tools/make_address_map.py` finds each address the build uses by matching the instructions around it, with branch targets and page offsets masked out, and checks that every match is unique and the same instruction. It writes `tools/address_map_eevee.py`, and `build_patch.py` translates through it with `A()` when it sees Eevee's build ID. The only difference in the patch itself is the partner's kind (see [Early saves](#early-saves)).
+
+## Ryujinx experimental variant
+
+The original build placed the `option_text` routine at `0xD32BB0`, outside the NSO `.text` segment (whose declared end is `0xD32BA8`). Static comparison with the supplied NSO and the reported PC identifies this as the strongest crash candidate. The experimental builder moves that routine and the other tail code into the existing `0x6F6830-0x6F7B10` parser-only executable cave, and moves the Exp. Share message table into the now data-only `0xD32BB0` gap. It regenerates relative branches and address material from the new locations. This is a hypothesis-driven build that still needs execution in Ryujinx. See [RYUJINX-EXPERIMENT.md](RYUJINX-EXPERIMENT.md).

@@ -139,7 +139,13 @@ def read_setting(reg, skip_slots):
 
 
 def sync_off():
-    # Refresh WILD_OFF from the save. Uses x9 and x16.
+    if os.environ.get("TBLG_DIAGNOSTIC_NO_OPTIONS") == "1":
+        # With the custom settings UI omitted, this Ryujinx test build always
+        # enables ordinary wild battles regardless of any saved Off bit.
+        emit(adrp(pc(), 16, WILD_OFF))
+        emit(0x39000000 | ((WILD_OFF & 0xFFF) << 10) | (16 << 5) | 31)  # strb wzr, [x16, #WILD_OFF]
+        return
+    # Otherwise refresh WILD_OFF from the save. Uses x9 and x16.
     skips = []
     read_setting(9, skips)
     emit(0xB9400000 | ((0x54 // 4) << 10) | (9 << 5) | 9)   # ldr w9, [x9, #0x54]
@@ -543,15 +549,18 @@ emit(cbz(pc(), pc() + 8, 16))
 emit(b(pc(), A(0x2F6470)))
 emit(b(pc(), marks["start_battle"]))
 
-mark("post_catch")                # the original follow-up only belongs to the normal catch flow. Reads the save: this may run before an encounter refreshes WILD_OFF.
-post_catch_skips = []
-read_setting(9, post_catch_skips)
-emit(0xB9405529)                  # ldr w9, [x9, #0x54]
-emit(0x37F80049)                  # tbnz w9, #31, over the next instruction
-emit(RET)
-for slot in post_catch_skips:
-    code[slot] = cbz(CAVE + slot * 4, pc(), 9, wide=True)
-emit(b(pc(), A(0x305970)))
+mark("post_catch")                # The original follow-up only belongs to the normal catch flow. It can run before an encounter refreshes WILD_OFF.
+if os.environ.get("TBLG_DIAGNOSTIC_NO_OPTIONS") == "1":
+    emit(RET)                      # treat the absent toggle as On
+else:
+    post_catch_skips = []
+    read_setting(9, post_catch_skips)
+    emit(0xB9405529)              # ldr w9, [x9, #0x54]
+    emit(0x37F80049)              # tbnz w9, #31, over the next instruction
+    emit(RET)
+    for slot in post_catch_skips:
+        code[slot] = cbz(CAVE + slot * 4, pc(), 9, wide=True)
+    emit(b(pc(), A(0x305970)))
 
 mark("tier")
 load_off()
@@ -1295,15 +1304,15 @@ edits.append(site(A(0x9D3860), "str w20, [x8, #0x508]", b(A(0x9D3860), marks["re
 edits.append(site(A(0x9DA378), "str w0, [x8, #0x508]", b(A(0x9DA378), marks["result_b"])))
 edits.append((CAVE, blob))
 
-# --- Option text. The lookup lives in the padding after the code section. The strings, one set per message folder,
-# are in the read-only padding after the build ID note, which is why the patch uses IPS32.
-TAIL = 0xD32BB0
+# --- Option text. Keep every routine in the executable text segment. Ryujinx can leave the sub-page gap
+# after .text non-executable even though it is writable through the NSO patcher. The gap remains for data only.
+TAIL = (CAVE + len(blob) + 3) & ~3
 TAIL_END = 0xD33000
 RO_TEXT = 0x1526180
 RO_END = 0x1527000
-assert TEXT_END <= TAIL and not any(image[TEXT_END:TAIL_END])
+assert TEXT_END <= 0xD32BB0 and not any(image[TEXT_END:TAIL_END])
 assert RO_DATA_END <= RO_TEXT and not any(image[RO_DATA_END:RO_END])
-EXP_TEXT_AT = (CAVE + len(blob) + 3) & ~3   # the third row's strings: no room left beside the others, so they follow the code
+EXP_TEXT_AT = 0xD32BB0   # 942 bytes of data fit before EXP_INFO_AT, inside the non-code inter-segment gap
 LANG_INDEX = A(0x1614B34)   # the active message folder, as set at 0x1B31E0 (Japanese kana 0, kanji 1, others 2-9)
 tail = []
 tail_marks = {}
@@ -1625,7 +1634,7 @@ labels_blob = b"".join(struct.pack("<QII", h, i, 0) for i, h in enumerate(LABELS
 labels_blob += b"".join(struct.pack("<QII", h, i, 1) for i, h in enumerate((EXP_TITLE, EXP_INFO))) + bytes(16)
 tail_code = b"".join(struct.pack("<I", w) for w in tail)
 tail_blob = tail_code + labels_blob
-assert TAIL + len(tail_blob) <= EXP_INFO_AT, hex(TAIL + len(tail_blob))
+assert TAIL + len(tail_blob) <= LIMIT, hex(TAIL + len(tail_blob))
 exp_info_name = EXP_INFO_NAME.encode() + b"\0"
 assert EXP_INFO_AT + len(exp_info_name) <= WILD_INFO_AT
 wild_info_name = WILD_INFO_NAME.encode() + b"\0"
@@ -1657,8 +1666,8 @@ for folder in range(10):
         exp_table += struct.pack("<HH", 10 * 2 * 4 + len(exp_pool), len(string))
         exp_pool += string.encode("utf-16-le")
 exp_blob = bytes(exp_table) + bytes(exp_pool)
-assert EXP_TEXT_AT + len(exp_blob) <= LIMIT, hex(EXP_TEXT_AT + len(exp_blob))
-print("exp share text", len(exp_blob), "bytes, cave free", LIMIT - EXP_TEXT_AT - len(exp_blob))
+assert EXP_TEXT_AT + len(exp_blob) <= EXP_INFO_AT, hex(EXP_TEXT_AT + len(exp_blob))
+print("exp share text", len(exp_blob), "bytes, inter-segment gap free", EXP_INFO_AT - EXP_TEXT_AT - len(exp_blob))
 
 edits.append(site(A(0x678710), "stp x20, x19, [sp, #-0x20]!", b(A(0x678710), tail_marks["option_text"])))
 edits.append((TAIL, tail_blob))
@@ -1705,7 +1714,35 @@ for ins in md.disasm(tail_code, TAIL):
     if ins.address in names2:
         print(f"-- {names2[ins.address]}")
     print(f"{ins.address:08X}  {ins.mnemonic} {ins.op_str}")
-print("tail ends", hex(TAIL + len(tail_blob)), "free", TAIL_END - TAIL - len(tail_blob))
+print("tail ends", hex(TAIL + len(tail_blob)), "executable cave free", LIMIT - TAIL - len(tail_blob))
+
+# Diagnostic Ryujinx variant: disable the three custom Options rows and their text lookup/data.
+# This isolates the observed row-12 text-builder crash while preserving the gameplay hooks.
+if os.environ.get("TBLG_DIAGNOSTIC_NO_OPTIONS") == "1":
+    ui_hooks = {A(a) for a in (0x4276C, 0x42804, 0x44DD4, 0x3F8D8, 0x452D4, 0x3EBC0, 0x3B37C, 0x3B404, 0x3F494, 0x678710)}
+    ui_data = {TAIL, RO_TEXT, EXP_TEXT_AT, EXP_INFO_AT, WILD_INFO_AT, TRADE_INFO_AT}
+    edits = [(a, d) for a, d in edits if a not in ui_hooks and a not in ui_data]
+    print("diagnostic build: custom Options rows/text omitted")
+
+# Second diagnostic toggle: leave the wild-faint sound command on the game's original path.
+if os.environ.get("TBLG_DIAGNOSTIC_KEEP_FAINT_SOUND") == "1":
+    sound_hook = A(0xAE9D38)
+    edits = [(a, d) for a, d in edits if a != sound_hook]
+    print("diagnostic build: original faint-sound handler retained")
+
+# Battle-core diagnostic: keep the tested battle/capture result hooks and EXP-on-win
+# gates, while leaving the faint animation, Exp. Share tracking and post-catch EXP
+# messages on the game's original paths.
+if os.environ.get("TBLG_DIAGNOSTIC_CORE_BATTLE") == "1":
+    battle_result_hooks = {A(a) for a in (
+        0x9FCF38, 0xA8A958,       # faint text / animation
+        0xA8A9D8, 0xA8AC14,       # faint target / return
+        0xAE09D0,                 # faint particle
+        0x9DBD70, 0x9E3C60,       # Exp. Share / fought tracking
+        0x83008C, 0x830024,       # post-catch EXP party messages
+    )}
+    edits = [(a, d) for a, d in edits if a not in battle_result_hooks]
+    print("diagnostic build: original faint, Exp. Share and post-catch EXP hooks retained")
 
 spans = sorted((a, a + len(d)) for a, d in edits)
 for (a1, e1), (a2, _) in zip(spans, spans[1:]):

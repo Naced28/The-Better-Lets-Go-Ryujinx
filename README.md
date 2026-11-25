@@ -1,5 +1,13 @@
 # The Better Let's Go
 
+## Ryujinx experimental build
+
+This fork contains an experimental Ryujinx build for **Pokémon: Let's Go, Pikachu! 1.0.2**. See the [Ryujinx test-build notes](docs/RYUJINX-EXPERIMENT.md) for its current behavior, installation, and build instructions.
+
+The current test build omits the custom Options rows (they crash while displaying under Ryujinx), so wild battles are enabled by default. The v7 build restores the EXP-on-win hooks; that change still needs an in-game test. Do not assume every feature described below for the original Switch build is available or validated in Ryujinx.
+
+
+
 ## AI disclosure
 
 **This project is AI-assisted, about 95% overall by my estimate.** That's a judgement, not a measurement.
