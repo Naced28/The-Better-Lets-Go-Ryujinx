@@ -20,13 +20,9 @@ A patch for **Pokémon: Let's Go, Pikachu!** and **Pokémon: Let's Go, Eevee!** 
 
 ## See it in action
 
-| Enable Wild Battle: **On** | Enable Wild Battle: **Off** |
+| Enable Wild Battle: **On** 
 |---|---|
-| ![With the option On, a wild Rattata starts a battle with Pikachu](docs/images/option-on.gif) | ![With the option Off, a wild Rattata goes straight to the normal catch screen](docs/images/option-off.gif) |
-
-The options in the Options menu:
-
-<img src="docs/images/option.jpg" width="600" alt="The Options menu with Enable Wild Battle selected and its description shown, above the Level-Up Trade Evolution and Exp. Share rows">
+| ![With the option On, a wild Rattata starts a battle with Pikachu](docs/images/option-on.gif)  |
 
 ## Features
 
@@ -59,7 +55,6 @@ All of these can be switched off in-game, except the caught marker, Sky Dash on 
 | Game | Title ID | Build ID |
 |---|---|---|
 | Let's Go, Pikachu! | `010003F003A34000` | `C208DB6A4EF4361F28B8402BE0F7CD9A` |
-| Let's Go, Eevee! | `0100187003A36000` | `5831EC64D6B696FD69E69505821B97B1` |
 
 Each patch only applies to its game's exact build. On any other version it does nothing.
 
